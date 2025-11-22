@@ -1,0 +1,102 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+for _, obj in pairs(workspace:GetDescendants()) do
+    if obj:IsA("BoxHandleAdornment") or obj:IsA("Highlight") then
+        obj:Destroy()
+    end
+end
+
+local function timVatPham()
+    local danhSach = {}
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Part") or obj:IsA("MeshPart") or obj:IsA("Model") then
+            local ten = string.lower(obj.Name)
+            if string.find(ten, "key") or
+               string.find(ten, "tool") or
+               string.find(ten, "weapon") or
+               string.find(ten, "gear") or
+               string.find(ten, "item") or
+               string.find(ten, "hammer") or
+               string.find(ten, "wrench") or
+               string.find(ten, "code") or
+               string.find(ten, "card") or
+               string.find(ten, "piece") or
+               obj.Name == "Padlock" or
+               obj.Name == "Crowbar" or
+               obj.Name == "Shotgun" then
+                table.insert(danhSach, obj)
+            end
+        end
+    end
+    return danhSach
+end
+
+local function taoESP(item)
+    if not item:FindFirstChild("ESP_Highlight") then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "ESP_Highlight"
+        highlight.FillColor = Color3.fromRGB(0, 255, 0)
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.3
+        highlight.OutlineTransparency = 0
+        highlight.Parent = item
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "ESP_Nhan"
+        billboard.AlwaysOnTop = true
+        billboard.Size = UDim2.new(0, 200, 0, 50)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = "Vật phẩm: " .. item.Name .. " [0 m]"
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        label.TextStrokeTransparency = 0
+        label.TextSize = 14
+        label.Font = Enum.Font.GothamBold
+        label.Parent = billboard
+
+        billboard.Parent = item
+        billboard.Adornee = item:IsA("Model") and item.PrimaryPart or item
+    end
+end
+
+local function batESP()
+    print("Đang bật ESP Granny…")
+    local vatPham = timVatPham()
+    print("Tìm thấy " .. #vatPham .. " vật phẩm quan trọng")
+    for _, item in pairs(vatPham) do
+        taoESP(item)
+        print("Đã thêm ESP cho: " .. item:GetFullName())
+    end
+
+    local updateConnection
+    updateConnection = RunService.Heartbeat:Connect(function()
+        for _, item in pairs(vatPham) do
+            if item and item.Parent then
+                local label = item:FindFirstChild("ESP_Nhan")
+                if label then
+                    local char = LocalPlayer.Character
+                    if char and char:FindFirstChild("HumanoidRootPart") then
+                        local khoangCach = (char.HumanoidRootPart.Position - 
+                            (item:IsA("Model") and item.PrimaryPart and item.PrimaryPart.Position or item.Position)).Magnitude
+                        label.TextLabel.Text = "Vật phẩm: " .. item.Name .. " [" .. math.floor(khoangCach) .. " m]"
+                    end
+                end
+            end
+        end
+    end)
+    return updateConnection
+end
+
+wait(2)
+local connection = batESP()
+
+while true do
+    wait(10)
+    connection:Disconnect()
+    connection = batESP()
+end
