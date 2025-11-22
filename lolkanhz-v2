@@ -1,474 +1,316 @@
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
 
--- Tạo ScreenGui chính
+local targetPlayer = nil
+local isFlying = false
+local flyConnection = nil
+
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "FlySystemGui"
-screenGui.Parent = playerGui
+screenGui.Name = "FlyAntGUI"
+screenGui.Parent = player.PlayerGui
 
--- Tạo nút bật/tắt menu bay (hình tròn)
-local toggleButton = Instance.new("ImageButton")
+local toggleButton = Instance.new("TextButton")
 toggleButton.Name = "ToggleButton"
-toggleButton.Size = UDim2.new(0, 60, 0, 60)
-toggleButton.Position = UDim2.new(1, -80, 1, -150) -- Góc dưới phải
-toggleButton.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
-toggleButton.Image = "rbxassetid://6031094677" -- Icon bay
-toggleButton.ScaleType = Enum.ScaleType.Slice
-toggleButton.SliceCenter = Rect.new(100, 100, 100, 100)
+toggleButton.Size = UDim2.new(0, 50, 0, 50)
+toggleButton.Position = UDim2.new(0, 10, 0, 10)
+toggleButton.BackgroundColor3 = Color3.fromRGB(0, 100, 255)
+toggleButton.Text = "🐜"
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextSize = 20
 toggleButton.Parent = screenGui
 
--- Tạo hiệu ứng bo tròn cho nút
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(1, 0) -- Hình tròn hoàn toàn
-corner.Parent = toggleButton
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 180, 0, 200)
+mainFrame.Position = UDim2.new(0, 70, 0, 10)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = true
+mainFrame.Parent = screenGui
 
--- Tạo menu trượt bay
-local slideMenu = Instance.new("Frame")
-slideMenu.Name = "FlyMenu"
-slideMenu.Size = UDim2.new(0, 300, 0, 400)
-slideMenu.Position = UDim2.new(1, 10, 1, -150) -- Bắt đầu từ ngoài màn hình bên phải
-slideMenu.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-slideMenu.BorderSizePixel = 0
-slideMenu.ClipsDescendants = true
-slideMenu.Parent = screenGui
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.Size = UDim2.new(1, 0, 0, 25)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundColor3 = Color3.fromRGB(0, 80, 160)
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Text = "FLY ANT - by lolkanhz"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 12
+title.Parent = mainFrame
 
--- Bo góc cho menu
-local menuCorner = Instance.new("UICorner")
-menuCorner.CornerRadius = UDim.new(0, 12)
-menuCorner.Parent = slideMenu
-
--- Thanh kéo trên menu
-local dragBar = Instance.new("Frame")
-dragBar.Name = "DragBar"
-dragBar.Size = UDim2.new(1, 0, 0, 30)
-dragBar.Position = UDim2.new(0, 0, 0, 0)
-dragBar.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-dragBar.BorderSizePixel = 0
-dragBar.Parent = slideMenu
-
--- Bo góc cho thanh kéo
-local dragCorner = Instance.new("UICorner")
-dragCorner.CornerRadius = UDim.new(0, 12)
-dragCorner.Parent = dragBar
-
--- Tiêu đề menu bay
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Name = "TitleLabel"
-titleLabel.Size = UDim2.new(1, -40, 1, 0)
-titleLabel.Position = UDim2.new(0, 10, 0, 0)
-titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "HỆ THỐNG BAY"
-titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-titleLabel.TextScaled = true
-titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = dragBar
-
--- Nút đóng trên thanh kéo
-local closeButton = Instance.new("TextButton")
-closeButton.Name = "CloseButton"
-closeButton.Size = UDim2.new(0, 25, 0, 25)
-closeButton.Position = UDim2.new(1, -30, 0, 2)
-closeButton.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-closeButton.Text = "X"
-closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeButton.TextScaled = true
-closeButton.Parent = dragBar
-
--- Bo góc cho nút đóng
-local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(1, 0)
-closeCorner.Parent = closeButton
-
--- Khu vực danh sách điểm đến
-local destinationsFrame = Instance.new("ScrollingFrame")
-destinationsFrame.Name = "DestinationsFrame"
-destinationsFrame.Size = UDim2.new(1, -20, 1, -120)
-destinationsFrame.Position = UDim2.new(0, 10, 0, 40)
-destinationsFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-destinationsFrame.BorderSizePixel = 0
-destinationsFrame.ScrollBarThickness = 5
-destinationsFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-destinationsFrame.Parent = slideMenu
-
--- Bo góc cho khu vực điểm đến
-local destCorner = Instance.new("UICorner")
-destCorner.CornerRadius = UDim.new(0, 8)
-destCorner.Parent = destinationsFrame
-
--- Khu vực điều khiển bay
-local controlFrame = Instance.new("Frame")
-controlFrame.Name = "ControlFrame"
-controlFrame.Size = UDim2.new(1, -20, 0, 70)
-controlFrame.Position = UDim2.new(0, 10, 1, -80)
-controlFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-controlFrame.BorderSizePixel = 0
-controlFrame.Parent = slideMenu
-
--- Bo góc cho khu vực điều khiển
-local controlCorner = Instance.new("UICorner")
-controlCorner.CornerRadius = UDim.new(0, 8)
-controlCorner.Parent = controlFrame
-
--- Nút bắt đầu bay
-local flyButton = Instance.new("TextButton")
-flyButton.Name = "FlyButton"
-flyButton.Size = UDim2.new(0.8, 0, 0, 40)
-flyButton.Position = UDim2.new(0.1, 0, 0.1, 0)
-flyButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-flyButton.Text = "BẮT ĐẦU BAY"
-flyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-flyButton.TextScaled = true
-flyButton.Parent = controlFrame
-
--- Bo góc cho nút bay
-local flyCorner = Instance.new("UICorner")
-flyCorner.CornerRadius = UDim.new(0, 8)
-flyCorner.Parent = flyButton
-
--- Label trạng thái bay
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Name = "StatusLabel"
-statusLabel.Size = UDim2.new(1, 0, 0, 20)
-statusLabel.Position = UDim2.new(0, 0, 0.7, 0)
+statusLabel.Size = UDim2.new(1, -10, 0, 20)
+statusLabel.Position = UDim2.new(0, 5, 0, 30)
 statusLabel.BackgroundTransparency = 1
+statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
 statusLabel.Text = "Sẵn sàng"
-statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-statusLabel.TextScaled = true
-statusLabel.Parent = controlFrame
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 10
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = mainFrame
 
--- Biến trạng thái
-local isMenuOpen = false
-local isDragging = false
-local isFlying = false
-local dragStartPos = nil
-local menuStartPos = nil
-local currentDestination = nil
-local bodyVelocity = nil
-local bodyGyro = nil
+local toggleFlyButton = Instance.new("TextButton")
+toggleFlyButton.Name = "ToggleFly"
+toggleFlyButton.Size = UDim2.new(1, -10, 0, 25)
+toggleFlyButton.Position = UDim2.new(0, 5, 0, 55)
+toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+toggleFlyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleFlyButton.Text = "BẬT BAY"
+toggleFlyButton.Font = Enum.Font.GothamBold
+toggleFlyButton.TextSize = 11
+toggleFlyButton.Parent = mainFrame
 
--- Danh sách điểm đến
-local destinations = {
-    {
-        name = "Đỉnh Núi",
-        position = Vector3.new(100, 150, 50),
-        color = Color3.fromRGB(139, 69, 19) -- Màu nâu
-    },
-    {
-        name = "Tòa Tháp",
-        position = Vector3.new(-200, 80, 100),
-        color = Color3.fromRGB(70, 130, 180) -- Màu thép
-    },
-    {
-        name = "Hòn Đảo",
-        position = Vector3.new(50, 25, -150),
-        color = Color3.fromRGB(34, 139, 34) -- Màu xanh lá
-    },
-    {
-        name = "Lâu Đài",
-        position = Vector3.new(300, 60, 200),
-        color = Color3.fromRGB(147, 112, 219) -- Màu tím
-    },
-    {
-        name = "Hồ Bơi",
-        position = Vector3.new(-100, 30, -50),
-        color = Color3.fromRGB(0, 191, 255) -- Màu xanh nước biển
-    }
-}
+local playersFrame = Instance.new("ScrollingFrame")
+playersFrame.Name = "PlayersFrame"
+playersFrame.Size = UDim2.new(1, -10, 0, 90)
+playersFrame.Position = UDim2.new(0, 5, 0, 85)
+playersFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+playersFrame.BorderSizePixel = 0
+playersFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+playersFrame.ScrollBarThickness = 4
+playersFrame.Parent = mainFrame
 
--- Hàm tạo hiệu ứng bay
-local function createFlyEffect()
-    local character = player.Character
-    if not character then return end
-    
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return end
-    
-    -- Tạo BodyVelocity để di chuyển
-    if bodyVelocity then bodyVelocity:Destroy() end
-    bodyVelocity = Instance.new("BodyVelocity")
-    bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-    bodyVelocity.MaxForce = Vector3.new(40000, 40000, 40000)
-    bodyVelocity.P = 10000
-    bodyVelocity.Parent = humanoidRootPart
-    
-    -- Tạo BodyGyro để ổn định hướng
-    if bodyGyro then bodyGyro:Destroy() end
-    bodyGyro = Instance.new("BodyGyro")
-    bodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
-    bodyGyro.P = 10000
-    bodyGyro.D = 500
-    bodyGyro.Parent = humanoidRootPart
-    
-    -- Hiệu ứng bay (particles)
-    local flyEffect = Instance.new("Part")
-    flyEffect.Name = "FlyEffect"
-    flyEffect.Size = Vector3.new(4, 0.2, 4)
-    flyEffect.Transparency = 0.5
-    flyEffect.Color = Color3.fromRGB(0, 191, 255)
-    flyEffect.Material = Enum.Material.Neon
-    flyEffect.Anchored = false
-    flyEffect.CanCollide = false
-    flyEffect.Parent = humanoidRootPart
-    
-    local weld = Instance.new("Weld")
-    weld.Part0 = humanoidRootPart
-    weld.Part1 = flyEffect
-    weld.C0 = CFrame.new(0, -3, 0)
-    weld.Parent = flyEffect
-end
+-- Biến lưu trạng thái trước khi chết
+local wasFlyingBeforeDeath = false
+local previousTarget = nil
 
--- Hàm dừng bay
-local function stopFlying()
-    isFlying = false
-    flyButton.Text = "BẮT ĐẦU BAY"
-    flyButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    statusLabel.Text = "Đã dừng bay"
-    
-    if bodyVelocity then
-        bodyVelocity:Destroy()
-        bodyVelocity = nil
-    end
-    
-    if bodyGyro then
-        bodyGyro:Destroy()
-        bodyGyro = nil
-    end
-    
-    local character = player.Character
-    if character then
-        local flyEffect = character:FindFirstChild("FlyEffect")
-        if flyEffect then
-            flyEffect:Destroy()
+local function updatePlayerList()
+    for _, child in ipairs(playersFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
         end
     end
-end
-
--- Hàm bay đến điểm đến
-local function flyToDestination(destination)
-    if not destination or not destination.position then return end
     
-    local character = player.Character
-    if not character then return end
-    
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return end
-    
-    isFlying = true
-    flyButton.Text = "DỪNG BAY"
-    flyButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-    statusLabel.Text = "Đang bay đến " .. destination.name
-    
-    createFlyEffect()
-    
-    local targetPosition = destination.position
-    local startPosition = humanoidRootPart.Position
-    
-    -- Tính toán hướng và khoảng cách
-    local direction = (targetPosition - startPosition).Unit
-    local distance = (targetPosition - startPosition).Magnitude
-    
-    -- Tốc độ bay (có thể điều chỉnh)
-    local flySpeed = 25
-    
-    -- Bắt đầu quá trình bay
-    local flyConnection
-    flyConnection = RunService.Heartbeat:Connect(function(deltaTime)
-        if not isFlying or not humanoidRootPart or not bodyVelocity then
-            flyConnection:Disconnect()
-            return
-        end
-        
-        local currentPosition = humanoidRootPart.Position
-        local remainingDistance = (targetPosition - currentPosition).Magnitude
-        
-        -- Cập nhật trạng thái
-        statusLabel.Text = string.format("Đang bay đến %s (%.1m)", destination.name, remainingDistance)
-        
-        if remainingDistance < 5 then
-            -- Đã đến gần điểm đến
-            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-            stopFlying()
-            statusLabel.Text = "Đã đến " .. destination.name
-            flyConnection:Disconnect()
-        else
-            -- Tiếp tục bay
-            local currentDirection = (targetPosition - currentPosition).Unit
-            bodyVelocity.Velocity = currentDirection * flySpeed
+    local yOffset = 0
+    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            local playerButton = Instance.new("TextButton")
+            playerButton.Name = otherPlayer.Name
+            playerButton.Size = UDim2.new(1, 0, 0, 20)
+            playerButton.Position = UDim2.new(0, 0, 0, yOffset)
             
-            -- Giữ nhân vật thẳng đứng
-            if bodyGyro then
-                bodyGyro.CFrame = CFrame.lookAt(currentPosition, currentPosition + currentDirection)
+            if targetPlayer == otherPlayer then
+                playerButton.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+            else
+                playerButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
             end
-        end
-    end)
-end
-
--- Hàm tạo nút điểm đến
-local function createDestinationButtons()
-    for i, destination in ipairs(destinations) do
-        local button = Instance.new("TextButton")
-        button.Name = "Destination_" .. i
-        button.Size = UDim2.new(1, -10, 0, 50)
-        button.Position = UDim2.new(0, 5, 0, (i-1) * 60)
-        button.BackgroundColor3 = destination.color
-        button.Text = destination.name
-        button.TextColor3 = Color3.fromRGB(255, 255, 255)
-        button.TextScaled = true
-        button.Parent = destinationsFrame
-        
-        local buttonCorner = Instance.new("UICorner")
-        buttonCorner.CornerRadius = UDim.new(0, 8)
-        buttonCorner.Parent = button
-        
-        -- Sự kiện click
-        button.MouseButton1Click:Connect(function()
-            currentDestination = destination
-            statusLabel.Text = "Đã chọn: " .. destination.name
             
-            -- Highlight nút được chọn
-            for _, otherButton in ipairs(destinationsFrame:GetChildren()) do
-                if otherButton:IsA("TextButton") then
-                    otherButton.BorderSizePixel = 0
-                end
-            end
-            button.BorderSizePixel = 2
-            button.BorderColor3 = Color3.fromRGB(255, 255, 255)
-        end)
-    end
-end
-
--- Hàm mở/đóng menu
-local function toggleMenu()
-    isMenuOpen = not isMenuOpen
-    
-    local targetPosition
-    if isMenuOpen then
-        targetPosition = UDim2.new(1, -310, 1, -150) -- Hiện menu
-    else
-        targetPosition = UDim2.new(1, 10, 1, -150) -- Ẩn menu
+            playerButton.BorderSizePixel = 0
+            playerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            playerButton.Text = otherPlayer.Name
+            playerButton.Font = Enum.Font.Gotham
+            playerButton.TextSize = 9
+            playerButton.Parent = playersFrame
+            
+            playerButton.MouseButton1Click:Connect(function()
+                targetPlayer = otherPlayer
+                statusLabel.Text = "Chọn: " .. otherPlayer.Name
+                statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                updatePlayerList()
+            end)
+            
+            yOffset = yOffset + 22
+        end
     end
     
-    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    local tween = TweenService:Create(slideMenu, tweenInfo, {Position = targetPosition})
-    tween:Play()
+    playersFrame.CanvasSize = UDim2.new(0, 0, 0, yOffset)
 end
 
--- Sự kiện cho nút bật/tắt
-toggleButton.MouseButton1Click:Connect(toggleMenu)
-
--- Sự kiện cho nút đóng
-closeButton.MouseButton1Click:Connect(function()
-    isMenuOpen = false
-    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    local tween = TweenService:Create(slideMenu, tweenInfo, {Position = UDim2.new(1, 10, 1, -150)})
-    tween:Play()
-end)
-
--- Sự kiện cho nút bay
-flyButton.MouseButton1Click:Connect(function()
-    if isFlying then
-        stopFlying()
-    else
-        if currentDestination then
-            flyToDestination(currentDestination)
-        else
-            statusLabel.Text = "Hãy chọn điểm đến trước!"
-        end
+local function flyToTarget()
+    if not targetPlayer or not targetPlayer.Character then
+        isFlying = false
+        return
     end
-end)
-
--- Xử lý kéo menu
-dragBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDragging = true
-        dragStartPos = Vector2.new(input.Position.X, input.Position.Y)
-        menuStartPos = slideMenu.Position
+    
+    local targetCharacter = targetPlayer.Character
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+    local targetHumanoid = targetCharacter:FindFirstChild("Humanoid")
+    
+    if not targetRoot or not targetHumanoid or not rootPart then
+        isFlying = false
+        return
     end
-end)
-
-dragBar.InputChanged:Connect(function(input)
-    if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = Vector2.new(input.Position.X, input.Position.Y) - dragStartPos
-        local newY = math.clamp(menuStartPos.Y.Offset + delta.Y, -slideMenu.AbsoluteSize.Y + 80, 0)
-        slideMenu.Position = UDim2.new(menuStartPos.X.Scale, menuStartPos.X.Offset, menuStartPos.Y.Scale, newY)
+    
+    if targetHumanoid.Health <= 0 then
+        isFlying = false
+        humanoid.PlatformStand = false
+        statusLabel.Text = "Target chết"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
     end
-end)
+    
+    local targetPosition = targetRoot.Position + Vector3.new(0, 6, 0)
+    rootPart.CFrame = CFrame.new(targetPosition)
+    humanoid.PlatformStand = true
+    rootPart.Velocity = Vector3.new(0, 0, 0)
+    rootPart.RotVelocity = Vector3.new(0, 0, 0)
+    
+    statusLabel.Text = "Đang bay: " .. targetPlayer.Name
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+end
 
-dragBar.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDragging = false
-        
-        -- Tự động mở/đóng dựa trên vị trí
-        local currentY = slideMenu.Position.Y.Offset
-        if currentY > -slideMenu.AbsoluteSize.Y / 2 then
-            -- Đóng menu
-            isMenuOpen = false
-            local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-            local tween = TweenService:Create(slideMenu, tweenInfo, {Position = UDim2.new(1, 10, 1, -150)})
-            tween:Play()
-        else
-            -- Mở menu
-            isMenuOpen = true
-            local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-            local tween = TweenService:Create(slideMenu, tweenInfo, {Position = UDim2.new(1, -310, 1, -150)})
-            tween:Play()
-        end
-    end
-end)
-
--- Khởi tạo các nút điểm đến
-createDestinationButtons()
-
--- Thông báo khởi tạo thành công
-statusLabel.Text = "Hệ thống bay đã sẵn sàng!"
-
--- Tự động dừng bay khi nhân vật chết
-player.CharacterAdded:Connect(function(character)
-    character:WaitForChild("Humanoid").Died:Connect(function()
-        if isFlying then
-            stopFlying()
-        end
-    end)
-end)
--- Tạo label hiện thông báo “Mẹ mày béo”
-local funnyLabel = Instance.new("TextLabel")
-funnyLabel.Size = UDim2.new(0.3, 0, 0.05, 0)
-funnyLabel.Position = UDim2.new(0.35, 0, 0.45, 0)
-funnyLabel.BackgroundTransparency = 0.5
-funnyLabel.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-funnyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-funnyLabel.TextScaled = true
-funnyLabel.Text = "Mẹ mày béo"
-funnyLabel.Visible = false
-funnyLabel.Parent = screenGui
-
--- Tạo nút bấm để mở menu + hiển thị label vui
-local autoOpenButton = Instance.new("TextButton")
-autoOpenButton.Name = "AutoOpenButton"
-autoOpenButton.Size = UDim2.new(0, 120, 0, 40)
-autoOpenButton.Position = UDim2.new(0.4, 0, 0.3, 0) -- đặt giữa màn hình tạm thời
-autoOpenButton.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
-autoOpenButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-autoOpenButton.TextScaled = true
-autoOpenButton.Text = "Mở Menu Vui"
-autoOpenButton.Parent = screenGui
-
-local autoCorner = Instance.new("UICorner")
-autoCorner.CornerRadius = UDim.new(0, 12)
-autoCorner.Parent = autoOpenButton
-
--- Khi bấm nút này, hiện thông báo “Mẹ mày béo” 1 giây, rồi mở menu bình thường
-autoOpenButton.MouseButton1Click:Connect(function()
-    funnyLabel.Visible = true
+local function onPlayerAdded(newPlayer)
     wait(1)
-    funnyLabel.Visible = false
+    updatePlayerList()
+end
+
+local function onPlayerRemoving(leavingPlayer)
+    if targetPlayer == leavingPlayer then
+        targetPlayer = nil
+        isFlying = false
+        if humanoid then
+            humanoid.PlatformStand = false
+        end
+        statusLabel.Text = "Target rời"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        toggleFlyButton.Text = "BẬT BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    end
+    updatePlayerList()
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+updatePlayerList()
+
+toggleButton.MouseButton1Click:Connect(function()
+    mainFrame.Visible = not mainFrame.Visible
+end)
+
+toggleFlyButton.MouseButton1Click:Connect(function()
+    if not targetPlayer then
+        statusLabel.Text = "Chọn target trước!"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
+    end
     
-    if not isMenuOpen then
-        toggleMenu()
+    if not targetPlayer.Character then
+        statusLabel.Text = "Target chưa load!"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
+    end
+    
+    isFlying = not isFlying
+    
+    if isFlying then
+        toggleFlyButton.Text = "ĐANG BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        statusLabel.Text = "Bay đến: " .. targetPlayer.Name
+        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+        
+        if flyConnection then
+            flyConnection:Disconnect()
+        end
+        flyConnection = RunService.Heartbeat:Connect(function()
+            if isFlying then
+                flyToTarget()
+            end
+        end)
+        
+    else
+        toggleFlyButton.Text = "BẬT BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        if humanoid then
+            humanoid.PlatformStand = false
+        end
+        statusLabel.Text = "Đã dừng bay"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+        
+        if flyConnection then
+            flyConnection:Disconnect()
+            flyConnection = nil
+        end
+    end
+end
+
+-- Xử lý khi nhân vật chết - CHỈ TẠM DỪNG, KHÔNG MẤT
+humanoid.Died:Connect(function()
+    -- Lưu trạng thái trước khi chết
+    wasFlyingBeforeDeath = isFlying
+    previousTarget = targetPlayer
+    
+    -- Tạm dừng bay
+    isFlying = false
+    if humanoid then
+        humanoid.PlatformStand = false
+    end
+    
+    toggleFlyButton.Text = "BẬT BAY"
+    toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    statusLabel.Text = "Đã chết - Tạm dừng"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 100, 0)
+    
+    if flyConnection then
+        flyConnection:Disconnect()
+        flyConnection = nil
     end
 end)
+
+-- Xử lý khi nhân vật hồi sinh - TỰ ĐỘNG KHÔI PHỤC
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    humanoid = character:WaitForChild("Humanoid")
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    
+    -- Đợi một chút cho nhân vật ổn định
+    wait(2)
+    
+    -- TỰ ĐỘNG KHÔI PHỤC trạng thái bay nếu trước đó đang bay
+    if wasFlyingBeforeDeath and previousTarget then
+        targetPlayer = previousTarget
+        isFlying = true
+        
+        toggleFlyButton.Text = "ĐANG BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        statusLabel.Text = "Đã hồi sinh - Đang bay: " .. targetPlayer.Name
+        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+        
+        -- Bắt đầu bay lại
+        if flyConnection then
+            flyConnection:Disconnect()
+        end
+        flyConnection = RunService.Heartbeat:Connect(function()
+            if isFlying then
+                flyToTarget()
+            end
+        end)
+    else
+        isFlying = false
+        statusLabel.Text = "Đã hồi sinh - Sẵn sàng"
+        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    end
+    
+    -- Kết nối sự kiện chết mới
+    humanoid.Died:Connect(function()
+        wasFlyingBeforeDeath = isFlying
+        previousTarget = targetPlayer
+        
+        isFlying = false
+        if humanoid then
+            humanoid.PlatformStand = false
+        end
+        
+        toggleFlyButton.Text = "BẬT BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        statusLabel.Text = "Đã chết - Tạm dừng"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 0)
+        
+        if flyConnection then
+            flyConnection:Disconnect()
+            flyConnection = nil
+        end
+    end)
+end)
+
+statusLabel.Text = "Ready"
+statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+
+print("FLY ANT - by lolkanhz - Không mất khi chết")
