@@ -2,14 +2,15 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local rootPart = character:WaitForChild("HumanoidRootPart")
 
+-- Biến toàn cục
 local targetPlayer = nil
 local isFlying = false
 local flyConnection = nil
+local wasFlyingBeforeDeath = false
+local previousTarget = nil
 
+-- Tạo GUI - ĐẶT NGOÀI HÀM ĐỂ KHÔNG BỊ MẤT
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "FlyAntGUI"
 screenGui.Parent = player.PlayerGui
@@ -50,7 +51,7 @@ statusLabel.Size = UDim2.new(1, -10, 0, 20)
 statusLabel.Position = UDim2.new(0, 5, 0, 30)
 statusLabel.BackgroundTransparency = 1
 statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-statusLabel.Text = "Sẵn sàng"
+statusLabel.Text = "Đang tải..."
 statusLabel.Font = Enum.Font.Gotham
 statusLabel.TextSize = 10
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -77,10 +78,18 @@ playersFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 playersFrame.ScrollBarThickness = 4
 playersFrame.Parent = mainFrame
 
--- Biến lưu trạng thái trước khi chết
-local wasFlyingBeforeDeath = false
-local previousTarget = nil
+-- Hàm MỞ KHÓA DI CHUYỂN
+local function unlockMovement()
+    local character = player.Character
+    if character then
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.PlatformStand = false -- QUAN TRỌNG: MỞ KHÓA DI CHUYỂN
+        end
+    end
+end
 
+-- Hàm cập nhật danh sách người chơi
 local function updatePlayerList()
     for _, child in ipairs(playersFrame:GetChildren()) do
         if child:IsA("TextButton") then
@@ -123,39 +132,60 @@ local function updatePlayerList()
     playersFrame.CanvasSize = UDim2.new(0, 0, 0, yOffset)
 end
 
+-- Hàm bay đến target
 local function flyToTarget()
-    if not targetPlayer or not targetPlayer.Character then
+    if not targetPlayer then 
         isFlying = false
-        return
+        unlockMovement() -- MỞ KHÓA NẾU KHÔNG CÓ TARGET
+        return 
     end
     
+    local character = player.Character
+    if not character then 
+        isFlying = false
+        return 
+    end
+    
+    local humanoid = character:FindFirstChild("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    
     local targetCharacter = targetPlayer.Character
+    if not targetCharacter then 
+        isFlying = false
+        unlockMovement()
+        return 
+    end
+    
     local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
     local targetHumanoid = targetCharacter:FindFirstChild("Humanoid")
     
-    if not targetRoot or not targetHumanoid or not rootPart then
+    if not targetRoot or not targetHumanoid or not rootPart or not humanoid then
         isFlying = false
+        unlockMovement()
         return
     end
     
+    -- KIỂM TRA TARGET CHẾT - TỰ ĐỘNG TẮT BAY VÀ MỞ KHÓA
     if targetHumanoid.Health <= 0 then
         isFlying = false
-        humanoid.PlatformStand = false
-        statusLabel.Text = "Target chết"
+        unlockMovement()
+        toggleFlyButton.Text = "BẬT BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        statusLabel.Text = "Target chết - Đã mở khóa"
         statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
         return
     end
     
+    -- Bay đến vị trí trên đầu target
     local targetPosition = targetRoot.Position + Vector3.new(0, 6, 0)
     rootPart.CFrame = CFrame.new(targetPosition)
-    humanoid.PlatformStand = true
-    rootPart.Velocity = Vector3.new(0, 0, 0)
-    rootPart.RotVelocity = Vector3.new(0, 0, 0)
+    humanoid.PlatformStand = true -- KHÓA DI CHUYỂN KHI ĐANG BAY
     
     statusLabel.Text = "Đang bay: " .. targetPlayer.Name
     statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
 end
 
+-- Xử lý khi người chơi tham gia/rời đi
 local function onPlayerAdded(newPlayer)
     wait(1)
     updatePlayerList()
@@ -165,10 +195,8 @@ local function onPlayerRemoving(leavingPlayer)
     if targetPlayer == leavingPlayer then
         targetPlayer = nil
         isFlying = false
-        if humanoid then
-            humanoid.PlatformStand = false
-        end
-        statusLabel.Text = "Target rời"
+        unlockMovement() -- MỞ KHÓA KHI TARGET RỜI
+        statusLabel.Text = "Target rời - Đã mở khóa"
         statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
         toggleFlyButton.Text = "BẬT BAY"
         toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
@@ -176,15 +204,65 @@ local function onPlayerRemoving(leavingPlayer)
     updatePlayerList()
 end
 
+-- Khi hồi sinh
+player.CharacterAdded:Connect(function(newCharacter)
+    wait(2)
+    
+    -- LUÔN MỞ KHÓA DI CHUYỂN KHI HỒI SINH
+    unlockMovement()
+    
+    -- TỰ ĐỘNG KHÔI PHỤC nếu trước đó đang bay
+    if wasFlyingBeforeDeath and previousTarget then
+        targetPlayer = previousTarget
+        isFlying = true
+        
+        toggleFlyButton.Text = "ĐANG BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        statusLabel.Text = "Đã hồi sinh - Đang bay: " .. targetPlayer.Name
+        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+        
+        if flyConnection then
+            flyConnection:Disconnect()
+        end
+        flyConnection = RunService.Heartbeat:Connect(function()
+            if isFlying then
+                flyToTarget()
+            end
+        end)
+    else
+        statusLabel.Text = "Đã hồi sinh - Sẵn sàng"
+        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    end
+end)
+
+-- Khi chết
+player.CharacterRemoving:Connect(function()
+    wasFlyingBeforeDeath = isFlying
+    previousTarget = targetPlayer
+    
+    isFlying = false
+    statusLabel.Text = "Đã chết - Tạm dừng"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 100, 0)
+    
+    if flyConnection then
+        flyConnection:Disconnect()
+        flyConnection = nil
+    end
+end)
+
+-- Kết nối sự kiện
 Players.PlayerAdded:Connect(onPlayerAdded)
 Players.PlayerRemoving:Connect(onPlayerRemoving)
 
+-- Khởi tạo ban đầu
 updatePlayerList()
 
+-- Xử lý nút bật/tắt menu
 toggleButton.MouseButton1Click:Connect(function()
     mainFrame.Visible = not mainFrame.Visible
 end)
 
+-- Xử lý nút bật/tắt bay - QUAN TRỌNG: MỞ KHÓA KHI TẮT BAY
 toggleFlyButton.MouseButton1Click:Connect(function()
     if not targetPlayer then
         statusLabel.Text = "Chọn target trước!"
@@ -216,12 +294,12 @@ toggleFlyButton.MouseButton1Click:Connect(function()
         end)
         
     else
+        -- QUAN TRỌNG: MỞ KHÓA DI CHUYỂN KHI TẮT BAY
+        unlockMovement()
+        
         toggleFlyButton.Text = "BẬT BAY"
         toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-        if humanoid then
-            humanoid.PlatformStand = false
-        end
-        statusLabel.Text = "Đã dừng bay"
+        statusLabel.Text = "Đã dừng bay - Có thể di chuyển"
         statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
         
         if flyConnection then
@@ -229,88 +307,9 @@ toggleFlyButton.MouseButton1Click:Connect(function()
             flyConnection = nil
         end
     end
-end
-
--- Xử lý khi nhân vật chết - CHỈ TẠM DỪNG, KHÔNG MẤT
-humanoid.Died:Connect(function()
-    -- Lưu trạng thái trước khi chết
-    wasFlyingBeforeDeath = isFlying
-    previousTarget = targetPlayer
-    
-    -- Tạm dừng bay
-    isFlying = false
-    if humanoid then
-        humanoid.PlatformStand = false
-    end
-    
-    toggleFlyButton.Text = "BẬT BAY"
-    toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    statusLabel.Text = "Đã chết - Tạm dừng"
-    statusLabel.TextColor3 = Color3.fromRGB(255, 100, 0)
-    
-    if flyConnection then
-        flyConnection:Disconnect()
-        flyConnection = nil
-    end
 end)
 
--- Xử lý khi nhân vật hồi sinh - TỰ ĐỘNG KHÔI PHỤC
-player.CharacterAdded:Connect(function(newCharacter)
-    character = newCharacter
-    humanoid = character:WaitForChild("Humanoid")
-    rootPart = character:WaitForChild("HumanoidRootPart")
-    
-    -- Đợi một chút cho nhân vật ổn định
-    wait(2)
-    
-    -- TỰ ĐỘNG KHÔI PHỤC trạng thái bay nếu trước đó đang bay
-    if wasFlyingBeforeDeath and previousTarget then
-        targetPlayer = previousTarget
-        isFlying = true
-        
-        toggleFlyButton.Text = "ĐANG BAY"
-        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        statusLabel.Text = "Đã hồi sinh - Đang bay: " .. targetPlayer.Name
-        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
-        
-        -- Bắt đầu bay lại
-        if flyConnection then
-            flyConnection:Disconnect()
-        end
-        flyConnection = RunService.Heartbeat:Connect(function()
-            if isFlying then
-                flyToTarget()
-            end
-        end)
-    else
-        isFlying = false
-        statusLabel.Text = "Đã hồi sinh - Sẵn sàng"
-        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-    end
-    
-    -- Kết nối sự kiện chết mới
-    humanoid.Died:Connect(function()
-        wasFlyingBeforeDeath = isFlying
-        previousTarget = targetPlayer
-        
-        isFlying = false
-        if humanoid then
-            humanoid.PlatformStand = false
-        end
-        
-        toggleFlyButton.Text = "BẬT BAY"
-        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-        statusLabel.Text = "Đã chết - Tạm dừng"
-        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 0)
-        
-        if flyConnection then
-            flyConnection:Disconnect()
-            flyConnection = nil
-        end
-    end)
-end)
-
-statusLabel.Text = "Ready"
+statusLabel.Text = "Sẵn sàng"
 statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
 
-print("FLY ANT - by lolkanhz - Không mất khi chết")
+print("FLY ANT - Đã sửa lỗi không di chuyển được - by lolkanhz")
