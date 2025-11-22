@@ -1,0 +1,269 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+local targetPlayer = nil
+local isFlying = false
+local flyConnection = nil
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FlyAntGUI"
+screenGui.Parent = player.PlayerGui
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Name = "ToggleButton"
+toggleButton.Size = UDim2.new(0, 50, 0, 50)
+toggleButton.Position = UDim2.new(0, 10, 0, 10)
+toggleButton.BackgroundColor3 = Color3.fromRGB(0, 100, 255)
+toggleButton.Text = "🐜"
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextSize = 20
+toggleButton.Parent = screenGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 180, 0, 200)
+mainFrame.Position = UDim2.new(0, 70, 0, 10)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = true
+mainFrame.Parent = screenGui
+
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.Size = UDim2.new(1, 0, 0, 25)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundColor3 = Color3.fromRGB(0, 80, 160)
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Text = "FLY ANT - by lolkanhz"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 12
+title.Parent = mainFrame
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Name = "StatusLabel"
+statusLabel.Size = UDim2.new(1, -10, 0, 20)
+statusLabel.Position = UDim2.new(0, 5, 0, 30)
+statusLabel.BackgroundTransparency = 1
+statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+statusLabel.Text = "Sẵn sàng"
+statusLabel.Font = Enum.Font.Gotham
+statusLabel.TextSize = 10
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = mainFrame
+
+local toggleFlyButton = Instance.new("TextButton")
+toggleFlyButton.Name = "ToggleFly"
+toggleFlyButton.Size = UDim2.new(1, -10, 0, 25)
+toggleFlyButton.Position = UDim2.new(0, 5, 0, 55)
+toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+toggleFlyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleFlyButton.Text = "BẬT BAY"
+toggleFlyButton.Font = Enum.Font.GothamBold
+toggleFlyButton.TextSize = 11
+toggleFlyButton.Parent = mainFrame
+
+local playersFrame = Instance.new("ScrollingFrame")
+playersFrame.Name = "PlayersFrame"
+playersFrame.Size = UDim2.new(1, -10, 0, 90)
+playersFrame.Position = UDim2.new(0, 5, 0, 85)
+playersFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+playersFrame.BorderSizePixel = 0
+playersFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+playersFrame.ScrollBarThickness = 4
+playersFrame.Parent = mainFrame
+
+local function updatePlayerList()
+    for _, child in ipairs(playersFrame:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+    
+    local yOffset = 0
+    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            local playerButton = Instance.new("TextButton")
+            playerButton.Name = otherPlayer.Name
+            playerButton.Size = UDim2.new(1, 0, 0, 20)
+            playerButton.Position = UDim2.new(0, 0, 0, yOffset)
+            
+            if targetPlayer == otherPlayer then
+                playerButton.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+            else
+                playerButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            end
+            
+            playerButton.BorderSizePixel = 0
+            playerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            playerButton.Text = otherPlayer.Name
+            playerButton.Font = Enum.Font.Gotham
+            playerButton.TextSize = 9
+            playerButton.Parent = playersFrame
+            
+            playerButton.MouseButton1Click:Connect(function()
+                targetPlayer = otherPlayer
+                statusLabel.Text = "Chọn: " .. otherPlayer.Name
+                statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                updatePlayerList()
+            end)
+            
+            yOffset = yOffset + 22
+        end
+    end
+    
+    playersFrame.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+end
+
+local function flyAndFollowTarget()
+    if not targetPlayer or not targetPlayer.Character then
+        isFlying = false
+        return
+    end
+    
+    local targetCharacter = targetPlayer.Character
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+    local targetHumanoid = targetCharacter:FindFirstChild("Humanoid")
+    
+    if not targetRoot or not targetHumanoid or not rootPart then
+        isFlying = false
+        return
+    end
+    
+    if targetHumanoid.Health <= 0 then
+        isFlying = false
+        humanoid.PlatformStand = false
+        statusLabel.Text = "Target chết"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
+    end
+    
+    local targetPosition = targetRoot.Position + Vector3.new(0, 6, 0)
+    rootPart.CFrame = CFrame.new(targetPosition)
+    humanoid.PlatformStand = true
+    rootPart.Velocity = Vector3.new(0, 0, 0)
+    rootPart.RotVelocity = Vector3.new(0, 0, 0)
+    
+    statusLabel.Text = "Đang đỉnh: " .. targetPlayer.Name
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+end
+
+local function onPlayerAdded(newPlayer)
+    wait(1)
+    updatePlayerList()
+end
+
+local function onPlayerRemoving(leavingPlayer)
+    if targetPlayer == leavingPlayer then
+        targetPlayer = nil
+        isFlying = false
+        humanoid.PlatformStand = false
+        statusLabel.Text = "Target rời"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        toggleFlyButton.Text = "BẬT BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    end
+    updatePlayerList()
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+updatePlayerList()
+
+toggleButton.MouseButton1Click:Connect(function()
+    mainFrame.Visible = not mainFrame.Visible
+end)
+
+toggleFlyButton.MouseButton1Click:Connect(function()
+    if not targetPlayer then
+        statusLabel.Text = "Chọn target trước!"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
+    end
+    
+    if not targetPlayer.Character then
+        statusLabel.Text = "Target chưa load!"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        return
+    end
+    
+    isFlying = not isFlying
+    
+    if isFlying then
+        toggleFlyButton.Text = "ĐANG BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+        statusLabel.Text = "Bay đến: " .. targetPlayer.Name
+        statusLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+        
+        if flyConnection then
+            flyConnection:Disconnect()
+        end
+        flyConnection = RunService.Heartbeat:Connect(function()
+            if isFlying then
+                flyAndFollowTarget()
+            end
+        end)
+        
+    else
+        toggleFlyButton.Text = "BẬT BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        humanoid.PlatformStand = false
+        statusLabel.Text = "Đã dừng bay"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+        
+        if flyConnection then
+            flyConnection:Disconnect()
+            flyConnection = nil
+        end
+    end
+end)
+
+humanoid.Died:Connect(function()
+    isFlying = false
+    humanoid.PlatformStand = false
+    toggleFlyButton.Text = "BẬT BAY"
+    toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    statusLabel.Text = "Đã chết"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+    
+    if flyConnection then
+        flyConnection:Disconnect()
+        flyConnection = nil
+    end
+end)
+
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    humanoid = character:WaitForChild("Humanoid")
+    rootPart = character:WaitForChild("HumanoidRootPart")
+    
+    isFlying = false
+    humanoid.PlatformStand = false
+    
+    humanoid.Died:Connect(function()
+        isFlying = false
+        humanoid.PlatformStand = false
+        toggleFlyButton.Text = "BẬT BAY"
+        toggleFlyButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        statusLabel.Text = "Đã chết"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        
+        if flyConnection then
+            flyConnection:Disconnect()
+            flyConnection = nil
+        end
+    end)
+    
+    statusLabel.Text = "Đã hồi sinh"
+    statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+end)
+
+statusLabel.Text = "Ready"
+statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+
+print("FLY ANT - by lolkanhz - Ready")
