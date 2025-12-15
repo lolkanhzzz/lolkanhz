@@ -1,0 +1,556 @@
+--[[
+	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your risk!
+    Integrated Features: Auto Dig (Prioritized), CFrame Speed, ESP, KillAura, etc.
+    Update v7.3: Added "Thumb-Friendly" Borders. The UI has thick empty margins on sides/bottom for easy dragging.
+]]
+-- Version: 7.3 (Big Grip Borders for Mobile)
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local ContextActionService = game:GetService("ContextActionService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local UserInputService = game:GetService("UserInputService")
+local Stats = game:GetService("Stats")
+
+--==================================================================================--
+--            NOCLIP FUNCTIONALITY                                                  --
+--==================================================================================--
+
+local Noclip = nil
+local Clip = nil
+local noclipEnabled = false
+local floatName = "FloatPart"
+
+function noclip()
+	Clip = false
+	local function Nocl()
+		if Clip == false and game.Players.LocalPlayer.Character ~= nil then
+			for _,v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+				if v:IsA('BasePart') and v.CanCollide and v.Name ~= floatName then
+					v.CanCollide = false
+				end
+			end
+		end
+		task.wait(0.21)
+	end
+	Noclip = game:GetService('RunService').Stepped:Connect(Nocl)
+end
+
+function clip()
+	if Noclip then 
+		Noclip:Disconnect() 
+	end
+	Clip = true
+
+	if game.Players.LocalPlayer.Character ~= nil then
+		local torso = game.Players.LocalPlayer.Character:FindFirstChild("Torso")
+		if torso and torso:IsA('BasePart') then
+			torso.CanCollide = true
+		end
+	end
+end
+
+local function reapplyNoclipIfEnabled()
+	if noclipEnabled then
+		task.wait(0.1)
+		noclip()
+	end
+end
+
+--==================================================================================--
+--            SPEED HACK FUNCTIONALITY (CFRAME METHOD)                              --
+--==================================================================================--
+
+local speedHackEnabled = false
+local speedValue = 10 -- Default speed
+local minSpeed = 1   -- Base walkspeed approx
+local maxSpeed = 30  -- Max slider speed
+
+RunService.Heartbeat:Connect(function(deltaTime)
+    if speedHackEnabled and LocalPlayer.Character then
+        local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+        local rootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+        if humanoid and rootPart and humanoid.Health > 0 then
+            local moveDir = humanoid.MoveDirection
+            if moveDir.Magnitude > 0 then
+                rootPart.CFrame = rootPart.CFrame + (moveDir * (speedValue * deltaTime))
+            end
+        end
+    end
+end)
+
+--==================================================================================--
+--            AUTO DIG FUNCTIONALITY                                                --
+--==================================================================================--
+
+local autoDigEnabled = false
+local digDelay = 0.1 
+local digRadius = 20 
+
+local overlapParams = OverlapParams.new()
+overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+overlapParams.MaxParts = 99999 
+
+local function findClosestBlock()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    overlapParams.FilterDescendantsInstances = {char}
+
+    local parts = workspace:GetPartBoundsInRadius(root.Position, digRadius, overlapParams)
+
+    local closestBlock = nil
+    local shortestDistance = math.huge 
+
+    for _, part in ipairs(parts) do
+        if part.Parent and part.Parent.Name == "Blocks" and part:IsA("BasePart") then
+            local dist = (root.Position - part.Position).Magnitude
+            if dist < shortestDistance then
+                shortestDistance = dist
+                closestBlock = part
+            end
+        end
+    end
+
+    return closestBlock
+end
+
+local function digBlock(blockPosition)
+    local event = ReplicatedStorage:FindFirstChild("ServerEvents")
+    local digRemote = event and event:FindFirstChild("Dig")
+    if digRemote then
+        digRemote:FireServer(blockPosition)
+    end
+end
+
+task.spawn(function()
+    while task.wait(digDelay) do
+        if autoDigEnabled then
+            local target = findClosestBlock()
+            if target then
+                digBlock(target.Position)
+            end
+        end
+    end
+end)
+
+--==================================================================================--
+--            VOTEKICK REMOVAL                                                      --
+--==================================================================================--
+
+pcall(function()
+    local voteKickEvent = ReplicatedStorage:WaitForChild("ServerEvents", 5) and ReplicatedStorage.ServerEvents:FindFirstChild("VoteKick")
+    if voteKickEvent then
+        voteKickEvent:Destroy()
+    end
+end)
+
+--==================================================================================--
+--            KILLAURA FUNCTIONALITY                                                --
+--==================================================================================--
+
+local killAuraEnabled = true 
+local killAuraStateBeforeAutoDig = nil
+
+local function findClosestPlayer()
+    if not (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) then
+        return nil
+    end
+
+    local myPosition = LocalPlayer.Character.HumanoidRootPart.Position
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local character = player.Character
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                local distance = (myPosition - character.HumanoidRootPart.Position).magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closestPlayer = player
+                end
+            end
+        end
+    end
+
+    return closestPlayer
+end
+
+task.spawn(function()
+    while task.wait() do
+        if killAuraEnabled and not autoDigEnabled then
+            local closestPlayer = findClosestPlayer()
+            if closestPlayer and closestPlayer.Character and closestPlayer.Character:FindFirstChild("Humanoid") and closestPlayer.Character:FindFirstChild("BiteHitbox") and closestPlayer.Character.Humanoid.Health > 0 then
+                local args = {
+                    [1] = "Bite",
+                    [2] = closestPlayer.Character.Humanoid,
+                    [3] = closestPlayer.Character.BiteHitbox
+                }
+                pcall(function()
+                    ReplicatedStorage.ServerEvents.Bite:FireServer(unpack(args))
+                end)
+            end
+        end
+    end
+end)
+
+
+--==================================================================================--
+--            HITBOX EXPANDER FUNCTIONALITY                                         --
+--==================================================================================--
+
+_G.TeamCheck = true
+
+RunService.RenderStepped:Connect(function()
+    if not _G.Disabled then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local character = player.Character
+                if character then
+                    pcall(function()
+                        local part = character:FindFirstChild("BiteHitbox")
+                        if part then
+                            if _G.TeamCheck and player.Team and player.Team == LocalPlayer.Team then
+                                part.Size = Vector3.new(1, 1, 1)
+                            else
+                                part.Size = Vector3.new(25, 25, 25)
+                                part.Transparency = 1
+                                part.BrickColor = BrickColor.new("Royal purple")
+                                part.Material = Enum.Material.Neon
+                                part.CanCollide = false
+                                part.Massless = true
+                            end
+                        end
+                    end)
+                end
+            end
+        end
+    end
+end)
+
+--==================================================================================--
+--            ESP FUNCTIONALITY                                                     --
+--==================================================================================--
+
+local ESP_TEXT_SIZE = 20
+local ESP_COLOR = Color3.new(1, 1, 1)
+local espEnabled = true
+local espTeamCheck = true
+
+local espLabels = {}
+
+local function getEspVisibility(player)
+    if not espEnabled then return false end
+    if espTeamCheck then
+        if player.Team and player.Team == LocalPlayer.Team then
+            return false
+        end
+    end
+    return true
+end
+
+local function updateAllESPViz()
+    for player, billboardGui in pairs(espLabels) do
+        if billboardGui and billboardGui.Parent then
+            billboardGui.Enabled = getEspVisibility(player)
+            local infoLabel = billboardGui:FindFirstChild("ESPInfoText")
+            if infoLabel then
+                 local teamColor = player.Team and player.Team.TeamColor.Color or Color3.new(1, 1, 1)
+                 infoLabel.TextColor3 = teamColor
+            end
+        end
+    end
+end
+
+local function getFormattedText(character, username)
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart", 5)
+    if not humanoidRootPart then return username end
+
+    local class = character:GetAttribute("Class")
+    local class2 = character:GetAttribute("Class2")
+    local size = character:GetAttribute("Size")
+
+    local infoParts = {}
+    if size then table.insert(infoParts, tostring(size)) end
+    if class then table.insert(infoParts, tostring(class)) end
+    if class2 then table.insert(infoParts, tostring(class2)) end
+
+    local infoText = #infoParts > 0 and "(" .. table.concat(infoParts, " / ") .. ")" or ""
+    return username .. " " .. infoText
+end
+
+local function createESP(player)
+    if player == LocalPlayer then return end
+
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoid = character:WaitForChild("Humanoid")
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+    if espLabels[player] then
+        espLabels[player]:Destroy()
+        espLabels[player] = nil
+    end
+
+    local billboardGui = Instance.new("BillboardGui")
+    billboardGui.Name = "ESP"
+    billboardGui.Parent = humanoidRootPart
+    billboardGui.Size = UDim2.new(0, 200, 0, 70) 
+    billboardGui.StudsOffset = Vector3.new(0, 3, 0) 
+    billboardGui.AlwaysOnTop = true
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Parent = billboardGui
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 5) 
+
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Name = "ESPInfoText"
+    infoLabel.Parent = billboardGui
+    infoLabel.LayoutOrder = 1 
+    infoLabel.Size = UDim2.new(1, 0, 0, ESP_TEXT_SIZE)
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.Text = getFormattedText(character, player.Name)
+    infoLabel.TextColor3 = ESP_COLOR
+    infoLabel.TextSize = ESP_TEXT_SIZE
+    infoLabel.Font = Enum.Font.SourceSansBold
+    infoLabel.TextStrokeTransparency = 0
+    infoLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+
+    local healthLabel = Instance.new("TextLabel")
+    healthLabel.Name = "ESPHealthText"
+    healthLabel.Parent = billboardGui
+    healthLabel.LayoutOrder = 2 
+    local healthTextSize = ESP_TEXT_SIZE - 2 
+    healthLabel.Size = UDim2.new(1, 0, 0, healthTextSize)
+    healthLabel.BackgroundTransparency = 1
+    healthLabel.Text = "100 HP" 
+    healthLabel.Font = Enum.Font.SourceSansBold
+    healthLabel.TextSize = healthTextSize
+    healthLabel.TextColor3 = Color3.fromRGB(85, 255, 85) 
+    healthLabel.TextStrokeTransparency = 1 
+
+    espLabels[player] = billboardGui
+
+    local connections = {}
+
+    local function updateHealthDisplay()
+        if not humanoid or not healthLabel or not healthLabel.Parent then return end
+        local health = humanoid.Health
+        healthLabel.Text = math.floor(health) .. " HP"
+        if health > 50 then
+            healthLabel.TextColor3 = Color3.fromRGB(85, 255, 85)
+        else
+            healthLabel.TextColor3 = Color3.fromRGB(255, 85, 85)
+        end
+    end
+
+    local function updateColorAndViz()
+        local teamColor = player.Team and player.Team.TeamColor.Color or Color3.new(1, 1, 1)
+        infoLabel.TextColor3 = teamColor
+        billboardGui.Enabled = getEspVisibility(player)
+    end
+
+    local function connectAttributeChange(attrName)
+        if character.GetAttributeChangedSignal then
+            table.insert(connections, character:GetAttributeChangedSignal(attrName):Connect(function()
+                if infoLabel and infoLabel.Parent then
+                    infoLabel.Text = getFormattedText(character, player.Name)
+                end
+            end))
+        end
+    end
+    connectAttributeChange("Class")
+    connectAttributeChange("Class2")
+    connectAttributeChange("Size")
+
+    table.insert(connections, player:GetPropertyChangedSignal("Team"):Connect(updateColorAndViz))
+    table.insert(connections, humanoid.HealthChanged:Connect(updateHealthDisplay))
+
+    updateColorAndViz()
+    updateHealthDisplay()
+
+    local respawnConnection
+    respawnConnection = player.CharacterAdded:Connect(function(newCharacter)
+        if billboardGui then billboardGui:Destroy() end
+        for _, conn in ipairs(connections) do conn:Disconnect() end
+        if espLabels[player] then espLabels[player] = nil end
+        if respawnConnection then respawnConnection:Disconnect() end
+        task.wait(0.1)
+        createESP(player)
+    end)
+
+    local leaveConnection
+    leaveConnection = player.AncestryChanged:Connect(function()
+        if not player.Parent then
+            if billboardGui then billboardGui:Destroy() end
+            for _, conn in ipairs(connections) do conn:Disconnect() end
+            if respawnConnection then respawnConnection:Disconnect() end
+            if leaveConnection then leaveConnection:Disconnect() end
+            espLabels[player] = nil
+        end
+    end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer and player.Character then
+        spawn(function() createESP(player) end)
+    end
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function() createESP(player) end)
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function() createESP(player) end)
+    end
+end)
+
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(updateAllESPViz)
+
+--==================================================================================--
+--            TUTORIAL POPUP GUI                                                    --
+--==================================================================================--
+
+local tutorialGui = Instance.new("ScreenGui")
+tutorialGui.Name = "TutorialGui"
+tutorialGui.ResetOnSpawn = false
+tutorialGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+tutorialGui.DisplayOrder = 999
+
+local blurEffect = Instance.new("Frame")
+blurEffect.Name = "Blur"
+blurEffect.Size = UDim2.fromScale(1, 1)
+blurEffect.BackgroundColor3 = Color3.new(0, 0, 0)
+blurEffect.BackgroundTransparency = 0.3
+blurEffect.BorderSizePixel = 0
+blurEffect.Parent = tutorialGui
+
+local tutorialFrame = Instance.new("Frame")
+tutorialFrame.Name = "TutorialFrame"
+tutorialFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+tutorialFrame.Position = UDim2.fromScale(0.5, 0.5)
+tutorialFrame.Size = UDim2.fromScale(0.9, 0.8) 
+tutorialFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+tutorialFrame.BorderSizePixel = 3
+tutorialFrame.BorderColor3 = Color3.fromRGB(100, 100, 255)
+tutorialFrame.Parent = tutorialGui
+
+local tutorialTitle = Instance.new("TextLabel")
+tutorialTitle.Name = "Title"
+tutorialTitle.Size = UDim2.new(1, 0, 0, 50)
+tutorialTitle.BackgroundColor3 = Color3.fromRGB(50, 50, 200)
+tutorialTitle.BorderSizePixel = 0
+tutorialTitle.Text = "Script Tutorial & Hotkeys"
+tutorialTitle.TextColor3 = Color3.new(1, 1, 1)
+tutorialTitle.Font = Enum.Font.SourceSansBold
+tutorialTitle.TextScaled = true
+tutorialTitle.Parent = tutorialFrame
+
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Name = "ScrollFrame"
+scrollFrame.Position = UDim2.new(0, 10, 0, 60)
+scrollFrame.Size = UDim2.new(1, -20, 1, -120)
+scrollFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 8
+scrollFrame.CanvasSize = UDim2.fromOffset(0, 1050)
+scrollFrame.Parent = tutorialFrame
+
+local contentText = Instance.new("TextLabel")
+contentText.Name = "Content"
+contentText.Size = UDim2.new(1, -10, 0, 1000)
+contentText.Position = UDim2.fromOffset(5, 5)
+contentText.BackgroundTransparency = 1
+contentText.TextColor3 = Color3.new(1, 1, 1)
+contentText.Font = Enum.Font.SourceSans
+contentText.TextSize = 16
+contentText.TextWrapped = true
+contentText.TextXAlignment = Enum.TextXAlignment.Left
+contentText.TextYAlignment = Enum.TextYAlignment.Top
+contentText.Parent = scrollFrame
+
+contentText.Text = [[
+HOTKEYS:
+────────────────────────────
+• Q - Toggle Auto Acid ON/OFF
+• G - Toggle Auto Walk ON/OFF
+
+────────────────────────────
+FEATURES & MODES:
+────────────────────────────
+
+1. AUTO ACID (Q to toggle OR click button)
+   Automatically uses acid ability on nearest enemy within 30 studs.
+   Works when your ability is ready and an enemy is in range.
+
+2. AUTO DIG (Click button to toggle)
+   Automatically digs nearby blocks.
+   **NOTE:** When enabled, this will automatically disable Kill Aura to prevent conflicts.
+
+3. AUTO WALK (G to toggle)
+   Holds W key automatically for continuous forward movement.
+   Press W manually to turn it off.
+
+4. KILLAURA (Click button to toggle)
+   Default: ON
+   Automatically bites the closest player to you.
+   **NOTE:** Will be greyed out if Auto Dig is enabled.
+
+5. SPEED HACK (Slider & Toggle)
+   Adjust slider to change speed.
+   Uses CFrame manipulation (works while attacking).
+
+6. LEGIT MODE (Click button to toggle)
+   Default: OFF
+   When ON, presses F key before using acid ability.
+   Makes the auto acid feature look more legitimate.
+
+7. NOCLIP (Click button to toggle)
+   Default: OFF
+   Walk through walls and obstacles.
+
+8. ESP (Click button to toggle)
+   Default: ON
+   Shows player names, class, size, and health.
+   Color changes based on team.
+
+────────────────────────────
+ADDITIONAL INFO:
+────────────────────────────
+
+• UI is draggable and minimizable for mobile!
+• Drag using the THICK BORDERS on the sides and bottom.
+• Click minimize button to collapse
+• Votekick is automatically disabled
+• Hitbox expander runs automatically (25x25x25)
+
+────────────────────────────
+Click CLOSE to start using the script!
+]]
+
+local closeTutorialButton = Instance.new("TextButton")
+closeTutorialButton.Name = "CloseButton"
+closeTutorialButton.AnchorPoint = Vector2.new(0.5, 0)
+closeTutorialButton.Position = UDim2.new(0.5, 0, 1, -50)
+closeTutorialButton.Size = UDim2.fromOffset(150, 40)
+closeTutorialButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeTutorialButton.BorderSizePixel = 0
+closeTutorialButton.Text = "CLOSE"
+closeTutorialButton.TextColor3 = Color3.new(1, 1, 1)
+closeTutorialButton.Font = Enum.Font.SourceSansBold
+closeTutorialButton.TextSize = 20
+closeTutorialButton.Parent = tutorialFrame
+
+closeTutorialButton.MouseButton1Click:Connect(function()
+    tutorialGui:Destroy()
+end)
+
+--==================================================================================--
+--            GUI SETUP (
